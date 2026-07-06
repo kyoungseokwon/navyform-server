@@ -1,8 +1,10 @@
 const express=require('express');const fs=require('fs');const path=require('path');const XLSX=require('xlsx');
 const app=express();const PORT=process.env.PORT||10000;const DATA=path.join(__dirname,'data.json');const LIMIT=2000;const ADMIN_ID=process.env.ADMIN_ID||'기군단';const ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||'2대대';
 app.use(express.json({limit:'1mb'}));app.use(express.static(__dirname));
+app.get('/admin',(req,res)=>res.sendFile(path.join(__dirname,'index.html')));
+
 function initial(){return {activeCohort:'1기',cohorts:{'1기':[]}}}
-function load(){try{const d=JSON.parse(fs.readFileSync(DATA,'utf8'));if(Array.isArray(d))return {activeCohort:'1기',cohorts:{'1기':d}};if(!d.activeCohort)d.activeCohort=Object.keys(d.cohorts||{})[0]||'1기';if(!d.cohorts)d.cohorts={[d.activeCohort]:[]};return d}catch(e){return initial()}}
+function load(){try{const d=JSON.parse(fs.readFileSync(DATA,'utf8'));if(Array.isArray(d))return {activeCohort:'1기',cohorts:{'1기':d}};if(!d.cohorts||typeof d.cohorts!=='object')d.cohorts={};if(Object.keys(d.cohorts).length===0)d.cohorts['1기']=[];if(!d.activeCohort||!d.cohorts[d.activeCohort])d.activeCohort=Object.keys(d.cohorts)[0]||'1기';return d}catch(e){return initial()}}
 function save(d){fs.writeFileSync(DATA,JSON.stringify(d,null,2),'utf8')}
 function now(){return new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})}
 function auth(req,res,next){const id=req.headers['x-admin-id']||req.query.adminId;const p=req.headers['x-admin-password']||req.query.password;if(id!==ADMIN_ID||p!==ADMIN_PASSWORD)return res.status(401).json({error:'관리자 아이디 또는 비밀번호가 올바르지 않습니다.'});next()}
