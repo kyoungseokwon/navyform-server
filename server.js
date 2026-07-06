@@ -1,11 +1,11 @@
 const express=require('express');const fs=require('fs');const path=require('path');const XLSX=require('xlsx');
-const app=express();const PORT=process.env.PORT||10000;const DATA=path.join(__dirname,'data.json');const LIMIT=2000;const ADMIN_PASSWORD='726!';
+const app=express();const PORT=process.env.PORT||10000;const DATA=path.join(__dirname,'data.json');const LIMIT=2000;const ADMIN_ID=process.env.ADMIN_ID||'기군단';const ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||'2대대';
 app.use(express.json({limit:'1mb'}));app.use(express.static(__dirname));
 function initial(){return {activeCohort:'1기',cohorts:{'1기':[]}}}
 function load(){try{const d=JSON.parse(fs.readFileSync(DATA,'utf8'));if(Array.isArray(d))return {activeCohort:'1기',cohorts:{'1기':d}};if(!d.activeCohort)d.activeCohort=Object.keys(d.cohorts||{})[0]||'1기';if(!d.cohorts)d.cohorts={[d.activeCohort]:[]};return d}catch(e){return initial()}}
 function save(d){fs.writeFileSync(DATA,JSON.stringify(d,null,2),'utf8')}
 function now(){return new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})}
-function auth(req,res,next){const p=req.headers['x-admin-password']||req.query.password;if(p!==ADMIN_PASSWORD)return res.status(401).json({error:'관리자 비밀번호가 필요합니다.'});next()}
+function auth(req,res,next){const id=req.headers['x-admin-id']||req.query.adminId;const p=req.headers['x-admin-password']||req.query.password;if(id!==ADMIN_ID||p!==ADMIN_PASSWORD)return res.status(401).json({error:'관리자 아이디 또는 비밀번호가 올바르지 않습니다.'});next()}
 function arr(d,cohort){const c=cohort||d.activeCohort;if(!d.cohorts[c])d.cohorts[c]=[];return d.cohorts[c]}
 app.get('/api/status',(req,res)=>{const d=load();res.json({limit:LIMIT,activeCohort:d.activeCohort,cohorts:Object.keys(d.cohorts)})});
 app.post('/api/admin/cohort',auth,(req,res)=>{const name=(req.body.name||'').trim();if(!name)return res.status(400).json({error:'기수를 입력해주세요.'});const d=load();if(!d.cohorts[name])d.cohorts[name]=[];d.activeCohort=name;save(d);res.json({ok:true,activeCohort:name,cohorts:Object.keys(d.cohorts)})});
