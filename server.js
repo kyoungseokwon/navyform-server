@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS submissions (
 `);
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 function now() { return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }); }
 function clean(v) { return String(v || '').trim(); }
