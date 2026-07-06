@@ -1,104 +1,11 @@
-const express = require('express');
-const path = require('path');
-const Database = require('better-sqlite3');
-const XLSX = require('xlsx');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const MAX_SUBMISSIONS = 2000;
-const db = new Database(path.join(__dirname, 'navyform.db'));
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS submissions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  platoon TEXT NOT NULL,
-  name TEXT NOT NULL,
-  address TEXT NOT NULL,
-  bandPhone TEXT NOT NULL,
-  bank TEXT NOT NULL,
-  account TEXT NOT NULL,
-  holder TEXT NOT NULL,
-  submitCount INTEGER NOT NULL DEFAULT 1,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  ip TEXT,
-  UNIQUE(platoon, name)
-);
-`);
-
-app.use(express.json());
-app.use(express.static(__dirname));
-
-function now() { return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }); }
-function clean(v) { return String(v || '').trim(); }
-function allRows() { return db.prepare('SELECT * FROM submissions ORDER BY id DESC').all(); }
-
-app.post('/api/submit', (req, res) => {
-  const data = {
-    platoon: clean(req.body.platoon),
-    name: clean(req.body.name),
-    address: clean(req.body.address),
-    bandPhone: clean(req.body.bandPhone),
-    bank: clean(req.body.bank),
-    account: clean(req.body.account),
-    holder: clean(req.body.holder)
-  };
-
-  if (Object.values(data).some(v => !v)) {
-    return res.status(400).json({ message: '모든 항목을 입력해주세요.' });
-  }
-
-  const existing = db.prepare('SELECT * FROM submissions WHERE platoon = ? AND name = ?').get(data.platoon, data.name);
-  const total = db.prepare('SELECT COUNT(*) AS count FROM submissions').get().count;
-
-  if (!existing && total >= MAX_SUBMISSIONS) {
-    return res.status(403).json({ message: `제출 가능 인원 ${MAX_SUBMISSIONS}명이 초과되었습니다.` });
-  }
-
-  const t = now();
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-
-  if (existing) {
-    db.prepare(`UPDATE submissions SET address=?, bandPhone=?, bank=?, account=?, holder=?, submitCount=submitCount+1, updatedAt=?, ip=? WHERE id=?`)
-      .run(data.address, data.bandPhone, data.bank, data.account, data.holder, t, ip, existing.id);
-    return res.json({ ok: true, mode: 'update', message: '수정이 완료되었습니다.' });
-  }
-
-  db.prepare(`INSERT INTO submissions (platoon, name, address, bandPhone, bank, account, holder, createdAt, updatedAt, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(data.platoon, data.name, data.address, data.bandPhone, data.bank, data.account, data.holder, t, t, ip);
-  res.json({ ok: true, mode: 'create', message: '제출이 완료되었습니다.' });
-});
-
-app.get('/api/submissions', (req, res) => {
-  res.json({ limit: MAX_SUBMISSIONS, total: db.prepare('SELECT COUNT(*) AS count FROM submissions').get().count, rows: allRows() });
-});
-
-app.delete('/api/submissions/:id', (req, res) => {
-  db.prepare('DELETE FROM submissions WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
-});
-
-app.get('/api/export', (req, res) => {
-  const rows = allRows().map(r => ({
-    '소대번호': r.platoon,
-    '이름': r.name,
-    '사복택배 주소': r.address,
-    'BAND 전화번호': r.bandPhone,
-    '은행': r.bank,
-    '계좌번호': r.account,
-    '예금주': r.holder,
-    '최초 제출': r.createdAt,
-    '최근 수정': r.updatedAt,
-    '수정 횟수': Math.max(0, r.submitCount - 1),
-    'IP': r.ip
-  }));
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, '제출현황');
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  res.setHeader('Content-Disposition', 'attachment; filename="navyform-submissions.xlsx"');
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.send(buffer);
-});
-
-app.listen(PORT, () => console.log(`Navyform server running on http://localhost:${PORT}`));
+const express=require('express');const fs=require('fs');const path=require('path');const XLSX=require('xlsx');
+const app=express();const PORT=process.env.PORT||10000;const DATA=path.join(__dirname,'data.json');const LIMIT=2000;
+app.use(express.json({limit:'1mb'}));app.use(express.static(__dirname));
+function load(){try{return JSON.parse(fs.readFileSync(DATA,'utf8'))}catch(e){return[]}}
+function save(d){fs.writeFileSync(DATA,JSON.stringify(d,null,2),'utf8')}
+function now(){return new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})}
+app.get('/api/submissions',(req,res)=>{const q=(req.query.q||'').trim();let d=load();if(q)d=d.filter(x=>(x.platoon+x.name).includes(q));res.json({limit:LIMIT,total:load().length,items:d.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))})});
+app.post('/api/submit',(req,res)=>{let d=load();const b=req.body||{};if(!b.platoon||!b.name||!b.address||!b.bandPhone||!b.bank||!b.account||!b.accountHolder)return res.status(400).json({error:'모든 항목을 입력해주세요.'});let idx=d.findIndex(x=>x.platoon===b.platoon&&x.name===b.name);const t=now();if(idx>=0){d[idx]={...d[idx],...b,updatedAt:t,editCount:(d[idx].editCount||0)+1};save(d);return res.json({ok:true,mode:'updated',item:d[idx]})}if(d.length>=LIMIT)return res.status(400).json({error:`제출 가능 인원 ${LIMIT}명을 초과했습니다.`});const item={id:Date.now().toString(36),...b,createdAt:t,updatedAt:t,editCount:0};d.push(item);save(d);res.json({ok:true,mode:'created',item})});
+app.delete('/api/submissions/:id',(req,res)=>{let d=load();d=d.filter(x=>x.id!==req.params.id);save(d);res.json({ok:true})});
+app.get('/api/export',(req,res)=>{const d=load().map(x=>({'소대번호':x.platoon,'이름':x.name,'사복택배 주소':x.address,'BAND 전화번호':x.bandPhone,'은행':x.bank,'계좌번호':x.account,'예금주':x.accountHolder,'제출시간':x.createdAt,'최근수정':x.updatedAt,'수정횟수':x.editCount||0}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(d),'제출현황');const buf=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});res.setHeader('Content-Disposition','attachment; filename="navyform.xlsx"');res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.send(buf)});
+app.listen(PORT,()=>console.log('Navyform server running on http://localhost:'+PORT));
