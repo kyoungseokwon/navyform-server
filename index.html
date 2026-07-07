@@ -99,4 +99,36 @@ async function openCohort(){
   if(typeof loadAdmin==='function') await loadAdmin();
 }
 setInterval(updateCloseStatus,3000);
+  function getSelectedCohort(){
+  const sel=document.querySelector('#cohortSelect');
+  return sel ? sel.value : '';
+}
+
+async function closeCohort(){
+  const cohort=getSelectedCohort();
+  if(!cohort)return alert('마감할 기수를 선택해주세요.');
+  if(!confirm(cohort+'를 마감할까요? 마감 후 훈련병 제출/수정이 차단됩니다.'))return;
+  await fetch('/api/admin/close-cohort?'+adminQuery(),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cohort})
+  });
+  alert(cohort+' 마감되었습니다.');
+  await refreshAdmin();
+  await loadAdmin();
+}
+
+async function openCohort(){
+  const cohort=getSelectedCohort();
+  if(!cohort)return alert('마감 해제할 기수를 선택해주세요.');
+  if(!confirm(cohort+' 마감을 해제할까요? 다시 제출/수정이 가능해집니다.'))return;
+  await fetch('/api/admin/open-cohort?'+adminQuery(),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cohort})
+  });
+  alert(cohort+' 마감 해제되었습니다.');
+  await refreshAdmin();
+  await loadAdmin();
+}
 </script></body></html>
