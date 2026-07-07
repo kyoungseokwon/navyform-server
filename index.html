@@ -60,7 +60,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(exportBtn) exportBtn.addEventListener('click', exportExcel);
 });
 
-if(location.pathname==='/admin')showAdmin();
+if(location.pathname==='/admin'){
+  showAdmin();
+  refreshAdmin();
+}
 
 
 function getAdminCohortValue(){
