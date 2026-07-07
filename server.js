@@ -215,6 +215,29 @@ app.post('/api/admin/close-cohort', auth, async (req, res) => {
 });
 
 app.post('/api/admin/open-cohort', auth, async (req, res) => {
+  app.delete('/api/admin/cohort', auth, async (req, res) => {
+  try {
+    const cohort = (req.body?.cohort || req.query.cohort || '').trim();
+    if (!cohort) return res.status(400).json({ error: '삭제할 기수를 선택해주세요.' });
+
+    await pool.query('delete from submissions where cohort=$1', [cohort]);
+    await pool.query('delete from settings where key=$1 or key=$2', ['cohort:' + cohort, 'closed:' + cohort]);
+
+    const active = await getSetting('active_cohort', '1기');
+    if (active === cohort) {
+      const cohorts = await getCohorts();
+      const next = cohorts.find(c => c !== cohort) || '1기';
+      await ensureCohort(next);
+      await setSetting('active_cohort', next);
+    }
+
+    console.log('cohort deleted:', cohort);
+    res.json({ ok: true, deleted: cohort });
+  } catch (e) {
+    console.error('delete cohort error:', e);
+    res.status(500).json({ error: '기수 삭제 중 오류가 발생했습니다.' });
+  }
+});
   try {
     const cohort = (req.body?.cohort || req.query.cohort || await getSetting('active_cohort', '1기')).trim();
     if (!cohort) return res.status(400).json({ error: '기수를 선택해주세요.' });
