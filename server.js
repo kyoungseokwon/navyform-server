@@ -78,7 +78,7 @@ async function getCohorts() {
      select distinct cohort as value from submissions
      order by value asc`
   );
-  const list = r.rows.map(x => x.value);
+  const list = r.rows.map(x => x.value).filter(Boolean);
   const active = await getSetting('active_cohort', '1기');
   if (!list.includes(active)) list.unshift(active);
   if (list.length === 0) list.push('1기');
