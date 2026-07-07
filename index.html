@@ -54,6 +54,17 @@ document.addEventListener('DOMContentLoaded',()=>{
   const createBtn=document.getElementById('createCohortBtn');
   const searchBtn=document.getElementById('searchBtn');
   const exportBtn=document.getElementById('exportBtn');
+  const cohortSelect=document.getElementById('cohortSelect');
+if(cohortSelect) cohortSelect.addEventListener('change',async()=>{
+  const name=cohortSelect.value;
+  if(!name)return;
+  await fetch('/api/admin/cohort?'+adminQuery(),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name})
+  });
+  await loadAdmin();
+});
   if(loginBtn) loginBtn.addEventListener('click', adminLogin);
   if(createBtn) createBtn.addEventListener('click', createCohort);
   if(searchBtn) searchBtn.addEventListener('click', loadAdmin);
