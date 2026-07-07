@@ -142,4 +142,22 @@ async function openCohort(){
   await refreshAdmin();
   await loadAdmin();
 }
+  async function deleteCohort(){
+  const cohort=getSelectedCohort();
+  if(!cohort)return alert('삭제할 기수를 선택해주세요.');
+  if(!confirm(cohort+' 기수와 해당 제출 데이터를 전부 삭제할까요? 복구할 수 없습니다.'))return;
+  if(!confirm('정말 삭제합니다. 이 작업은 되돌릴 수 없습니다.'))return;
+
+  const r=await fetch('/api/admin/cohort?'+adminQuery(),{
+    method:'DELETE',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cohort})
+  });
+
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)return alert(j.error||'기수 삭제 실패');
+
+  alert(cohort+' 삭제 완료');
+  await refreshAdmin();
+}
 </script></body></html>
