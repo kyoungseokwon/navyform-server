@@ -33,7 +33,17 @@ function renderCompanyStats(items){
   $('#companyStats').innerHTML=Object.keys(counts).map(k=>`<div class="companyBox"><span>${k}</span><strong>${counts[k]}명</strong></div>`).join('');
 }
 
-function renderCohorts(cohorts,selected){cohorts=Array.isArray(cohorts)?cohorts.filter(Boolean):Object.keys(cohorts||{});if(selected&&!cohorts.includes(selected))cohorts.unshift(selected);if(cohorts.length===0)cohorts=['1기'];$('#cohortSelect').innerHTML=cohorts.map(c=>`<option value="${c}">${c}</option>`).join('');$('#cohortSelect').value=selected||cohorts[0]}
+function renderCohorts(cohorts,selected){
+  if(!Array.isArray(cohorts)) cohorts=Object.keys(cohorts||{});
+  cohorts=[...new Set(cohorts.filter(Boolean))];
+  if(selected&&!cohorts.includes(selected)) cohorts.unshift(selected);
+  if(cohorts.length===0) cohorts=['1기'];
+  const sel=$('#cohortSelect');
+  if(sel){
+    sel.innerHTML=cohorts.map(c=>`<option value="${c}" ${c===selected?'selected':''}>${c}</option>`).join('');
+  }
+  updateCloseStatus();
+}
 async function createCohort(){const name=$('#newCohort').value.trim();if(!name)return alert('기수를 입력해주세요.');const btn=$('#createCohortBtn');btn.disabled=true;btn.textContent='생성 중...';try{const url='/api/admin/create-cohort?'+adminQuery()+'&name='+encodeURIComponent(name);const r=await fetch(url);const j=await r.json().catch(()=>({error:'응답을 읽지 못했습니다.'}));if(!r.ok){if(r.status===401){alert(j.error||'로그인이 필요합니다.');showLogin();return}return alert(j.error||'기수 생성 실패')}$('#newCohort').value='';renderCohorts(j.cohorts||[],j.activeCohort||name);await loadAdmin();alert((j.activeCohort||name)+'가 현재 기수로 설정되었습니다.')}catch(e){alert('기수 생성 중 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.')}finally{btn.disabled=false;btn.textContent='기수 생성'}}
 function exportExcel(){const c=$('#cohortSelect').value||'';location.href='/api/export?adminId='+encodeURIComponent(adminId)+'&password='+encodeURIComponent(adminPassword)+'&cohort='+encodeURIComponent(c)}
 function edit(x){for(const k of ['platoon','name','address','bandPhone','bank','account','accountHolder'])form.elements[k].value=x[k]||'';$('#agree').checked=true;showForm()}
