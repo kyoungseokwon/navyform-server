@@ -20,7 +20,7 @@ const pool = new Pool({
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get(['/', '/admin'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 function now() {
   return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
@@ -274,4 +274,12 @@ app.get('/api/export', auth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log('Navyform server running on http://localhost:' + PORT));
+app.listen(PORT, async () => {
+  console.log('Navyform server running on http://localhost:' + PORT);
+  try {
+    await pool.query('select 1');
+    console.log('Supabase DB connected');
+  } catch (e) {
+    console.error('Supabase DB connection failed:', e.message);
+  }
+});
