@@ -73,13 +73,27 @@ async function ensureCohort(name) {
 
 async function getCohorts() {
   const r = await pool.query(
-    `select value from settings where key like 'cohort:%' order by value asc`
+    `select value from settings where key like 'cohort:%'
+     union
+     select distinct cohort as value from submissions
+     order by value asc`
   );
   const list = r.rows.map(x => x.value);
   const active = await getSetting('active_cohort', '1기');
   if (!list.includes(active)) list.unshift(active);
   if (list.length === 0) list.push('1기');
   return list;
+}
+
+async function isClosed(cohort) {
+  const v = await getSetting('closed:' + cohort, 'false');
+  return v === 'true';
+}
+
+async function getClosedMap(cohorts) {
+  const map = {};
+  for (const c of cohorts) map[c] = await isClosed(c);
+  return map;
 }
 
 app.get('/api/status', async (req, res) => {
@@ -89,7 +103,8 @@ app.get('/api/status', async (req, res) => {
     const cohorts = await getCohorts();
     const obj = {};
     cohorts.forEach(c => obj[c] = []);
-    res.json({ limit: LIMIT, activeCohort, cohorts: obj });
+    const closed = await getClosedMap(cohorts);
+    res.json({ limit: LIMIT, activeCohort, cohorts: obj, closed });
   } catch (e) {
     console.error('status error:', e);
     res.status(500).json({ error: '상태 조회 실패' });
@@ -105,6 +120,10 @@ app.post('/api/submit', async (req, res) => {
 
     const cohort = await getSetting('active_cohort', '1기');
     await ensureCohort(cohort);
+
+    if (await isClosed(cohort)) {
+      return res.status(403).json({ error: '해당 기수는 마감되어 제출 또는 수정할 수 없습니다.' });
+    }
 
     const count = await pool.query('select count(*)::int as cnt from submissions where cohort=$1', [cohort]);
     const existing = await pool.query(
@@ -177,6 +196,35 @@ app.get('/api/admin/create-cohort', auth, async (req, res) => {
   } catch (e) {
     console.error('cohort error:', e);
     res.status(500).json({ error: '기수 생성 중 오류가 발생했습니다.' });
+  }
+});
+
+
+app.post('/api/admin/close-cohort', auth, async (req, res) => {
+  try {
+    const cohort = (req.body?.cohort || req.query.cohort || await getSetting('active_cohort', '1기')).trim();
+    if (!cohort) return res.status(400).json({ error: '기수를 선택해주세요.' });
+    await ensureCohort(cohort);
+    await setSetting('closed:' + cohort, 'true');
+    console.log('cohort closed:', cohort);
+    res.json({ ok: true, cohort, closed: true });
+  } catch (e) {
+    console.error('close cohort error:', e);
+    res.status(500).json({ error: '기수 마감 중 오류가 발생했습니다.' });
+  }
+});
+
+app.post('/api/admin/open-cohort', auth, async (req, res) => {
+  try {
+    const cohort = (req.body?.cohort || req.query.cohort || await getSetting('active_cohort', '1기')).trim();
+    if (!cohort) return res.status(400).json({ error: '기수를 선택해주세요.' });
+    await ensureCohort(cohort);
+    await setSetting('closed:' + cohort, 'false');
+    console.log('cohort opened:', cohort);
+    res.json({ ok: true, cohort, closed: false });
+  } catch (e) {
+    console.error('open cohort error:', e);
+    res.status(500).json({ error: '기수 마감 해제 중 오류가 발생했습니다.' });
   }
 });
 
