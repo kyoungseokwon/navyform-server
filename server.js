@@ -114,7 +114,7 @@ app.get('/api/status', async (req, res) => {
 app.post('/api/submit', async (req, res) => {
   try {
     const b = req.body || {};
-    if (!b.platoon || !b.name || !b.address || !b.bandPhone || !b.bank || !b.account || !b.accountHolder) {
+    if (!b.platoon || !b.name || !b.address || !b.bandPhone) {
       return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
     }
 
@@ -154,7 +154,7 @@ app.post('/api/submit', async (req, res) => {
          to_char(created_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as created_at_text,
          to_char(updated_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as updated_at_text,
          edit_count`,
-      [cohort, b.platoon, b.name, b.address, b.bandPhone, b.bank, b.account, b.accountHolder]
+      [cohort, b.platoon, b.name, b.address, b.bandPhone, b.bank || '', b.account || '', b.accountHolder || '']
     );
 
     console.log('submit saved:', cohort, b.platoon, b.name);
@@ -297,7 +297,7 @@ app.post('/api/submissions/:id', auth, async (req, res) => {
         to_char(created_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as created_at_text,
         to_char(updated_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as updated_at_text,
         edit_count`,
-      [b.platoon, b.name, b.address, b.bandPhone, b.bank, b.account, b.accountHolder, req.params.id]
+      [b.platoon, b.name, b.address, b.bandPhone, b.bank || '', b.account || '', b.accountHolder || '', req.params.id]
     );
     res.json({ ok: true, item: arr(r.rows)[0] });
   } catch (e) {
@@ -310,7 +310,7 @@ app.get('/api/export', auth, async (req, res) => {
   try {
     const cohort = req.query.cohort || await getSetting('active_cohort', '1기');
     const r = await pool.query(
-      `select cohort, platoon, name, address, band_phone, bank, account, account_holder,
+      `select cohort, platoon, name, address, band_phone,
         to_char(created_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as created_at_text,
         to_char(updated_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as updated_at_text,
         edit_count
@@ -324,9 +324,6 @@ app.get('/api/export', auth, async (req, res) => {
       '이름': x.name,
       '사복택배 주소': x.address,
       'BAND 전화번호': x.band_phone,
-      '월급 받을 은행': x.bank,
-      '계좌번호': x.account,
-      '예금주': x.account_holder,
       '제출 시간': x.created_at_text,
       '최근 수정': x.updated_at_text,
       '수정 횟수': x.edit_count
@@ -354,3 +351,4 @@ app.listen(PORT, async () => {
     console.error('Supabase DB connection failed:', e.message);
   }
 });
+
