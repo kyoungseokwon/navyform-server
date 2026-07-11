@@ -4,6 +4,7 @@ const app=express();
 const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
 app.use(express.json({limit:"8mb"}));
 app.use(express.static(path.join(__dirname,"public")));
+app.get(["/","/admin"],(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
 const tokens=new Set();
 async function init(){
  await pool.query(`create table if not exists cohorts(id bigserial primary key,name text unique not null,is_active boolean not null default false,is_closed boolean not null default false,created_at timestamptz not null default now())`);
