@@ -233,30 +233,61 @@ app.post('/api/admin/close-cohort', auth, async (req, res) => {
   }
 });
 
-app.post('/api/admin/open-cohort', auth, async (req, res) => {
-  app.delete('/api/admin/cohort', auth, async (req, res) => {
+app.delete('/api/admin/cohort', auth, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const cohort = (req.body?.cohort || req.query.cohort || '').trim();
+    const cohort = String(req.body?.cohort || req.query.cohort || '').trim();
     if (!cohort) return res.status(400).json({ error: '삭제할 기수를 선택해주세요.' });
 
-    await pool.query('delete from submissions where cohort=$1', [cohort]);
-    await pool.query('delete from settings where key=$1 or key=$2', ['cohort:' + cohort, 'closed:' + cohort]);
+    await client.query('begin');
+    await client.query('delete from submissions where cohort=$1', [cohort]);
+    await client.query(
+      'delete from settings where key=$1 or key=$2',
+      ['cohort:' + cohort, 'closed:' + cohort]
+    );
 
-    const active = await getSetting('active_cohort', '1기');
+    const activeResult = await client.query(
+      "select value from settings where key='active_cohort' limit 1"
+    );
+    const active = activeResult.rows[0]?.value || '1기';
+    let next = active;
+
     if (active === cohort) {
-      const cohorts = await getCohorts();
-      const next = cohorts.find(c => c !== cohort) || '1기';
-      await ensureCohort(next);
-      await setSetting('active_cohort', next);
+      const remaining = await client.query(
+        `select value from settings
+         where key like 'cohort:%' and value<>$1
+         union
+         select distinct cohort as value from submissions where cohort<>$1
+         order by value
+         limit 1`,
+        [cohort]
+      );
+      next = remaining.rows[0]?.value || '1기';
+      await client.query(
+        `insert into settings(key,value) values($1,$2)
+         on conflict(key) do update set value=excluded.value`,
+        ['cohort:' + next, next]
+      );
+      await client.query(
+        `insert into settings(key,value) values('active_cohort',$1)
+         on conflict(key) do update set value=excluded.value`,
+        [next]
+      );
     }
 
+    await client.query('commit');
     console.log('cohort deleted:', cohort);
-    res.json({ ok: true, deleted: cohort });
+    res.json({ ok: true, deleted: cohort, activeCohort: next });
   } catch (e) {
+    await client.query('rollback').catch(() => {});
     console.error('delete cohort error:', e);
     res.status(500).json({ error: '기수 삭제 중 오류가 발생했습니다.' });
+  } finally {
+    client.release();
   }
 });
+
+app.post('/api/admin/open-cohort', auth, async (req, res) => {
   try {
     const cohort = (req.body?.cohort || req.query.cohort || await getSetting('active_cohort', '1기')).trim();
     if (!cohort) return res.status(400).json({ error: '기수를 선택해주세요.' });
@@ -370,5 +401,6 @@ app.listen(PORT, async () => {
     console.error('Supabase DB connection failed:', e.message);
   }
 });
+
 
 
