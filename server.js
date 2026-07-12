@@ -15,7 +15,11 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 15,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
+  keepAlive: true
 });
 
 app.use(express.json({ limit: '1mb' }));
@@ -118,29 +122,37 @@ app.post('/api/submit', async (req, res) => {
       return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
     }
 
-    const cohort = await getSetting('active_cohort', '1기');
-    await ensureCohort(cohort);
-
-    if (await isClosed(cohort)) {
+    const state = await pool.query(`
+      with active as (
+        select coalesce(
+          (select value from settings where key='active_cohort' limit 1),
+          '1기'
+        ) as cohort
+      )
+      select active.cohort,
+             coalesce(closed.value, 'false') = 'true' as is_closed
+      from active
+      left join settings closed on closed.key = 'closed:' || active.cohort
+    `);
+    const cohort = state.rows[0]?.cohort || '1기';
+    if (state.rows[0]?.is_closed) {
       return res.status(403).json({ error: '해당 기수는 마감되어 제출 또는 수정할 수 없습니다.' });
     }
 
-    const count = await pool.query('select count(*)::int as cnt from submissions where cohort=$1', [cohort]);
-    const existing = await pool.query(
-      'select id from submissions where cohort=$1 and platoon=$2 and name=$3',
-      [cohort, b.platoon, b.name]
-    );
-
-    if (existing.rows.length === 0 && count.rows[0].cnt >= LIMIT) {
-      return res.status(400).json({ error: '제출 한도를 초과했습니다.' });
-    }
-
-    const t = now();
-
     const r = await pool.query(
-      `insert into submissions
+      `with capacity as (
+         select
+           exists(
+             select 1 from submissions
+             where cohort=$1 and platoon=$2 and name=$3
+           ) as is_existing,
+           (select count(*) < $9 from submissions where cohort=$1) as has_room
+       )
+       insert into submissions
        (cohort, platoon, name, address, band_phone, bank, account, account_holder, created_at, updated_at, edit_count)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,now(),now(),0)
+       select $1,$2,$3,$4,$5,$6,$7,$8,now(),now(),0
+       from capacity
+       where is_existing or has_room
        on conflict (cohort, platoon, name)
        do update set
          address=excluded.address,
@@ -154,14 +166,21 @@ app.post('/api/submit', async (req, res) => {
          to_char(created_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as created_at_text,
          to_char(updated_at at time zone 'Asia/Seoul','YYYY. MM. DD. HH24시 MI분 SS초') as updated_at_text,
          edit_count`,
-      [cohort, b.platoon, b.name, b.address, b.bandPhone, b.bank || '', b.account || '', b.accountHolder || '']
+      [cohort, b.platoon, b.name, b.address, b.bandPhone, b.bank || '', b.account || '', b.accountHolder || '', LIMIT]
     );
 
+    if (!r.rows.length) {
+      return res.status(400).json({ error: '제출 한도를 초과했습니다.' });
+    }
+    const item = arr(r.rows, cohort)[0];
     console.log('submit saved:', cohort, b.platoon, b.name);
-    res.json({ ok: true, item: arr(r.rows, cohort)[0], time: t });
+    res.json({ ok: true, item, mode: Number(item.editCount || 0) > 0 ? 'updated' : 'created' });
   } catch (e) {
     console.error('submit error:', e);
-    res.status(500).json({ error: '제출 저장 중 오류가 발생했습니다.' });
+    const busy = /timeout|connection|clients|slots/i.test(String(e?.message || ''));
+    res.status(busy ? 503 : 500).json({
+      error: busy ? '현재 제출이 몰리고 있습니다. 잠시 후 다시 시도해주세요.' : '제출 저장 중 오류가 발생했습니다.'
+    });
   }
 });
 
@@ -351,4 +370,5 @@ app.listen(PORT, async () => {
     console.error('Supabase DB connection failed:', e.message);
   }
 });
+
 
